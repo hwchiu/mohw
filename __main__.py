@@ -3,21 +3,21 @@
 prometheus-analyzer：利用 LLM 自動分析 Prometheus metrics，找出系統不穩定的根本原因。
 
 用法範例：
-  python -m prometheus_analyzer \
+  python __main__.py \
     --prometheus http://prometheus.internal:9090 \
     --start "2026-03-10 14:00:00" \
     --end "2026-03-10 15:00:00"
 
-  # 指定 LLM endpoint（預設使用 cline 設定）
-  python -m prometheus_analyzer \
+  # 指定 LLM endpoint（或透過 .env 設定 LLM_BASE_URL / LLM_MODEL_ID）
+  python __main__.py \
     --prometheus http://prometheus.internal:9090 \
     --start "2026-03-10 14:00:00" \
     --end "2026-03-10 15:00:00" \
-    --llm-url http://ai-coding-agent.qq.com/cline \
-    --model coder-flash
+    --llm-url http://test.com \
+    --model my-model
 
   # 強制指定模式（略過 capability probe）
-  python -m prometheus_analyzer ... --mode c
+  python __main__.py ... --mode c
 """
 
 import sys
@@ -72,17 +72,17 @@ def analyze(
     llm_url: Optional[str] = typer.Option(
         None,
         "--llm-url",
-        help="LLM API base URL（預設：http://ai-coding-agent.qq.com/cline）",
+        help="LLM API base URL（優先於 .env 的 LLM_BASE_URL）",
     ),
     model: Optional[str] = typer.Option(
         None,
         "--model", "-m",
-        help="Model ID（預設：coder-flash）",
+        help="Model ID（優先於 .env 的 LLM_MODEL_ID）",
     ),
-    api_key: str = typer.Option(
-        "none",
+    api_key: Optional[str] = typer.Option(
+        None,
         "--api-key",
-        help="LLM API key（預設：none）",
+        help="LLM API key（優先於 .env 的 LLM_API_KEY，預設：none）",
     ),
     mode: Optional[str] = typer.Option(
         None,
@@ -107,11 +107,12 @@ def analyze(
 ):
     """分析指定時間範圍內 Prometheus metrics 的異常，找出系統不穩定的根本原因。"""
 
-    # ── 建立設定 ──────────────────────────────
+    # ── 建立設定（CLI 參數優先，其次讀 .env，最後用預設值）──────
+    base_llm = LLMConfig()  # 先載入 .env 預設值
     llm_config = LLMConfig(
-        base_url=llm_url or "http://ai-coding-agent.qq.com/cline",
-        model_id=model or "coder-flash",
-        api_key=api_key,
+        base_url=llm_url or base_llm.base_url,
+        model_id=model or base_llm.model_id,
+        api_key=api_key or base_llm.api_key,
     )
     prom_config = PrometheusConfig(
         base_url=prometheus,

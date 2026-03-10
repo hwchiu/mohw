@@ -1,14 +1,18 @@
+import os
 from dataclasses import dataclass, field
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass
 class LLMConfig:
-    base_url: str = "http://ai-coding-agent.qq.com/cline"
-    model_id: str = "coder-flash"
-    api_key: str = "none"
-    timeout: int = 120
-    max_tokens: int = 4096
+    base_url: str = field(default_factory=lambda: os.getenv("LLM_BASE_URL", "http://localhost"))
+    model_id: str = field(default_factory=lambda: os.getenv("LLM_MODEL_ID", ""))
+    api_key: str = field(default_factory=lambda: os.getenv("LLM_API_KEY", "none"))
+    timeout: int = int(os.getenv("LLM_TIMEOUT", "120"))
+    max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 
     @property
     def chat_endpoint(self) -> str:
@@ -18,7 +22,7 @@ class LLMConfig:
 
 @dataclass
 class PrometheusConfig:
-    base_url: str = "http://localhost:9090"
+    base_url: str = field(default_factory=lambda: os.getenv("PROMETHEUS_URL", "http://localhost:9090"))
     timeout: int = 30
     max_metrics_scan: int = 500  # 最多掃描幾個 metrics 找異常
 
@@ -43,6 +47,6 @@ class PrometheusConfig:
 class AppConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     prometheus: PrometheusConfig = field(default_factory=PrometheusConfig)
-    anomaly_sigma_threshold: float = 2.5  # z-score 超過此值視為異常
-    max_anomalies_to_report: int = 20     # 最多回報幾個異常 metrics
-    mode_override: Optional[str] = None  # None=auto, "a"/"b"/"c"=強制模式
+    anomaly_sigma_threshold: float = float(os.getenv("ANOMALY_SIGMA", "2.5"))
+    max_anomalies_to_report: int = int(os.getenv("MAX_ANOMALIES", "20"))
+    mode_override: Optional[str] = field(default_factory=lambda: os.getenv("ANALYSIS_MODE"))

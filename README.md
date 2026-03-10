@@ -46,18 +46,43 @@
 git clone https://github.com/hwchiu/mohw.git
 cd mohw
 pip install -r requirements.txt
+
+# 建立 .env 設定檔
+cp .env.example .env
+# 編輯 .env，填入你的 LLM endpoint 與 Prometheus URL
 ```
 
 ---
 
 ## 快速開始
 
+### 方式一：透過 `.env` 設定（推薦）
+
+```bash
+# .env
+LLM_BASE_URL=http://test.com
+LLM_MODEL_ID=my-model
+PROMETHEUS_URL=http://prometheus.internal:9090
+```
+
+```bash
+python __main__.py \
+  --start "2026-03-10 14:00:00" \
+  --end   "2026-03-10 15:00:00"
+```
+
+### 方式二：全部透過 CLI 參數
+
 ```bash
 python __main__.py \
   --prometheus http://prometheus.internal:9090 \
   --start "2026-03-10 14:00:00" \
-  --end   "2026-03-10 15:00:00"
+  --end   "2026-03-10 15:00:00" \
+  --llm-url http://test.com \
+  --model my-model
 ```
+
+CLI 參數的優先度高於 `.env`，`.env` 高於程式內建預設值。
 
 工具會自動：
 1. 測試 Prometheus 連線
@@ -71,13 +96,12 @@ python __main__.py \
 
 ```
 Options:
-  -p, --prometheus  TEXT     Prometheus base URL                        [必填]
-  -s, --start       TEXT     分析開始時間（ISO 格式或 unix timestamp）   [必填]
-  -e, --end         TEXT     分析結束時間（ISO 格式或 unix timestamp）   [必填]
-      --llm-url     TEXT     LLM API base URL
-                             預設：http://ai-coding-agent.qq.com/cline
-  -m, --model       TEXT     Model ID（預設：coder-flash）
-      --api-key     TEXT     LLM API key（預設：none，內網免驗證）
+  -p, --prometheus  TEXT     Prometheus base URL（優先於 .env 的 PROMETHEUS_URL） [必填]
+  -s, --start       TEXT     分析開始時間（ISO 格式或 unix timestamp）             [必填]
+  -e, --end         TEXT     分析結束時間（ISO 格式或 unix timestamp）             [必填]
+      --llm-url     TEXT     LLM API base URL（優先於 .env 的 LLM_BASE_URL）
+  -m, --model       TEXT     Model ID（優先於 .env 的 LLM_MODEL_ID）
+      --api-key     TEXT     LLM API key（優先於 .env 的 LLM_API_KEY，預設：none）
       --mode        TEXT     強制指定模式：a / b / c（預設自動偵測）
       --sigma       FLOAT    z-score 異常閾值（預設 2.5）
                              值越小 → 偵測越敏感 → 異常越多
@@ -195,31 +219,28 @@ z = |value - mean| / std
 
 ## LLM 串接設定
 
-本工具預設對應 cline CLI 的設定方式：
+所有 LLM 相關設定建議寫在 `.env`：
+
+```bash
+# .env
+LLM_BASE_URL=http://test.com
+LLM_MODEL_ID=my-model
+LLM_API_KEY=none
+```
+
+`.env` 對應 cline CLI 的設定方式：
 
 ```bash
 # cline 初始設定指令
 cline auth -k "none" --provider openai \
-  --baseurl "http://ai-coding-agent.qq.com/cline" \
-  --modelid coder-flash
-```
-
-對應本工具的參數：
-
-```bash
-python __main__.py \
-  --prometheus http://prometheus.internal:9090 \
-  --start "2026-03-10 14:00:00" \
-  --end   "2026-03-10 15:00:00" \
-  --llm-url "http://ai-coding-agent.qq.com/cline" \
-  --model   "coder-flash" \
-  --api-key "none"
+  --baseurl "http://test.com" \
+  --modelid my-model
 ```
 
 ### 其他相容的 LLM 後端
 
-| 後端 | `--llm-url` | `--model` |
-|------|------------|-----------|
+| 後端 | `LLM_BASE_URL`（.env） | `LLM_MODEL_ID`（.env） |
+|------|----------------------|----------------------|
 | Ollama | `http://localhost:11434` | `qwen2.5:14b` |
 | LM Studio | `http://localhost:1234` | `（你載入的模型名稱）` |
 | vLLM | `http://localhost:8000` | `（你部署的模型名稱）` |
@@ -282,7 +303,7 @@ pytest tests/ --tb=short -q
 │                                                     │
 │  Prometheus:  http://prometheus.internal:9090       │
 │  時間範圍:    2026-03-10 14:00:00 ~ 15:00:00 UTC    │
-│  LLM:         http://ai-coding-agent.qq.com/cline   │
+│  LLM:         http://test.com                       │
 │  模式:        自動偵測                               │
 ╰─────────────────────────────────────────────────────╯
 
@@ -329,6 +350,7 @@ Model 支援多輪 tool calling → 使用 A 模式（Full Agentic）
 
 ```
 mohw/
+├── .env.example          # 環境變數範本（複製為 .env 後填入實際值）
 ├── __main__.py           # CLI 入口
 ├── config.py             # 設定檔（LLM / Prometheus / App）
 ├── prometheus_client.py  # Prometheus HTTP API 封裝

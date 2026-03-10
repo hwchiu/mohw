@@ -24,7 +24,11 @@ class LLMConfig:
 class PrometheusConfig:
     base_url: str = field(default_factory=lambda: os.getenv("PROMETHEUS_URL", "http://localhost:9090"))
     timeout: int = 30
-    max_metrics_scan: int = 500  # 最多掃描幾個 metrics 找異常
+    max_metrics_scan: int = 500  # 無節點模式下最多掃描幾個 metrics
+
+    @property
+    def series_endpoint(self) -> str:
+        return f"{self.base_url.rstrip('/')}/api/v1/series"
 
     @property
     def query_range_endpoint(self) -> str:
@@ -54,3 +58,5 @@ class AppConfig:
     target_node: Optional[str] = field(default_factory=lambda: os.getenv("TARGET_NODE"))
     # Prometheus 中代表節點的 label 名稱（node_exporter 常用 instance，k8s 常用 node）
     node_label: str = field(default_factory=lambda: os.getenv("NODE_LABEL", "instance"))
+    # 並行掃描的 worker 數（節點模式下生效）
+    scan_workers: int = int(os.getenv("SCAN_WORKERS", "10"))

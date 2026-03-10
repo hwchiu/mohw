@@ -41,13 +41,38 @@ class PrometheusClient:
         self.session.timeout = config.timeout
 
     def list_metric_names(self) -> list[str]:
-        """列出所有 metric 名稱"""
+        """列出全域所有 metric 名稱（未過濾節點）"""
         resp = self.session.get(self.config.labels_endpoint)
         resp.raise_for_status()
         data = resp.json()
         if data.get("status") != "success":
             raise RuntimeError(f"Prometheus error: {data.get('error')}")
         return sorted(data["data"])
+
+    def list_series_for_node(
+        self,
+        node_label: str,
+        node_value: str,
+        start: float,
+        end: float,
+    ) -> list[dict]:
+        """
+        用 /api/v1/series 查詢特定節點在時間範圍內存在的所有 series。
+        比 list_metric_names() + 逐一 query 快得多（只需一次 HTTP 請求）。
+
+        回傳 list of label dicts，每個 dict 包含 __name__ 和其他 labels。
+        """
+        params = {
+            "match[]": f'{{{node_label}="{node_value}"}}',
+            "start": start,
+            "end": end,
+        }
+        resp = self.session.get(self.config.series_endpoint, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") != "success":
+            raise RuntimeError(f"Prometheus error: {data.get('error')}")
+        return data.get("data", [])
 
     def get_metadata(self, metric_name: Optional[str] = None) -> dict:
         """取得 metric 的 help text 與 type"""

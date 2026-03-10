@@ -136,9 +136,11 @@ def test_detect_anomalies_tool(executor, time_range, app_config):
     start, end = time_range
 
     spike = make_spike_series("cpu_usage", baseline=10.0, spike_value=300.0, start=start)
-    prom.list_metric_names.return_value = ["cpu_usage"]
+    prom.list_series_for_node.return_value = [{"__name__": "cpu_usage", "instance": "worker-01"}]
     prom.get_metadata.return_value = {}
     prom.query_range.return_value = [spike]
+    # executor fixture uses app_config which has target_node=None; set it for this test
+    ex.config.target_node = "worker-01"
 
     result = json.loads(ex.execute("detect_anomalies", {}))
 
@@ -154,9 +156,12 @@ def test_detect_anomalies_tool_top_n(executor, time_range):
 
     all_metrics = {f"m_{i}": [make_spike_series(f"m_{i}", spike_value=999.0, start=start)]
                    for i in range(10)}
-    prom.list_metric_names.return_value = list(all_metrics.keys())
+    prom.list_series_for_node.return_value = [
+        {"__name__": k, "instance": "worker-01"} for k in all_metrics
+    ]
     prom.get_metadata.return_value = {}
-    prom.query_range.side_effect = lambda name, *a, **kw: all_metrics.get(name, [])
+    prom.query_range.side_effect = lambda q, *a, **kw: all_metrics.get(q.split("{")[0], [])
+    ex.config.target_node = "worker-01"
 
     result = json.loads(ex.execute("detect_anomalies", {"top_n": 3}))
 

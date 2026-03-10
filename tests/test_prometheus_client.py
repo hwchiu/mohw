@@ -176,7 +176,61 @@ def test_diagnose_connection_records_status_codes(client):
         assert probe["ok"] is False
 
 
-# ── apply_node_filter ──────────────────────────────────────────────────────────
+# ── list_series_for_node ──────────────────────────────────────────────────────
+
+def test_list_series_for_node_success(client):
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {
+        "status": "success",
+        "data": [
+            {"__name__": "node_cpu_seconds_total", "instance": "worker-01", "cpu": "0"},
+            {"__name__": "node_memory_MemAvailable_bytes", "instance": "worker-01"},
+            {"__name__": "node_cpu_seconds_total", "instance": "worker-01", "cpu": "1"},
+        ],
+    }
+
+    with patch.object(client.session, "get", return_value=mock_resp) as mock_get:
+        result = client.list_series_for_node("instance", "worker-01", 1000.0, 2000.0)
+
+    # Verify the correct endpoint and params were used
+    call_args = mock_get.call_args
+    assert "series" in call_args[0][0]
+    params = call_args[1].get("params") or call_args[0][1] if len(call_args[0]) > 1 else call_args[1]["params"]
+    assert 'worker-01' in str(params)
+
+    assert len(result) == 3
+    assert result[0]["__name__"] == "node_cpu_seconds_total"
+
+
+def test_list_series_for_node_empty(client):
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"status": "success", "data": []}
+
+    with patch.object(client.session, "get", return_value=mock_resp):
+        result = client.list_series_for_node("instance", "worker-01", 1000.0, 2000.0)
+
+    assert result == []
+
+
+def test_list_series_for_node_error(client):
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"status": "error", "error": "bad selector"}
+
+    with patch.object(client.session, "get", return_value=mock_resp):
+        with pytest.raises(RuntimeError, match="bad selector"):
+            client.list_series_for_node("instance", "worker-01", 1000.0, 2000.0)
+
+
+def test_series_endpoint_path(prom_config):
+    """series_endpoint 屬性應包含正確路徑"""
+    client = PrometheusClient(prom_config)
+    assert "/api/v1/series" in client.config.series_endpoint
+
+
+
 
 def test_apply_node_filter_bare_metric():
     result = apply_node_filter("cpu_usage", "instance", "worker-01")

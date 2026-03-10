@@ -50,3 +50,7 @@ class AppConfig:
     anomaly_sigma_threshold: float = float(os.getenv("ANOMALY_SIGMA", "2.5"))
     max_anomalies_to_report: int = int(os.getenv("MAX_ANOMALIES", "20"))
     mode_override: Optional[str] = field(default_factory=lambda: os.getenv("ANALYSIS_MODE"))
+    # 節點篩選：指定後所有 PromQL query 都只查詢該節點的 metrics
+    target_node: Optional[str] = field(default_factory=lambda: os.getenv("TARGET_NODE"))
+    # Prometheus 中代表節點的 label 名稱（node_exporter 常用 instance，k8s 常用 node）
+    node_label: str = field(default_factory=lambda: os.getenv("NODE_LABEL", "instance"))

@@ -69,6 +69,20 @@ def analyze(
         "--end", "-e",
         help="分析結束時間，例如 '2026-03-10 15:00:00' 或 unix timestamp",
     ),
+    node: Optional[str] = typer.Option(
+        None,
+        "--node", "-n",
+        help="目標節點名稱（優先於 .env 的 TARGET_NODE）。"
+             "例如 worker-01 或 192.168.1.10:9100。"
+             "設定後所有 metrics 查詢都只針對此節點。",
+    ),
+    node_label: Optional[str] = typer.Option(
+        None,
+        "--node-label",
+        help="Prometheus 中代表節點的 label 名稱（優先於 .env 的 NODE_LABEL）。"
+             "node_exporter 環境通常是 instance；k8s 環境通常是 node。"
+             "預設：instance",
+    ),
     llm_url: Optional[str] = typer.Option(
         None,
         "--llm-url",
@@ -108,7 +122,8 @@ def analyze(
     """分析指定時間範圍內 Prometheus metrics 的異常，找出系統不穩定的根本原因。"""
 
     # ── 建立設定（CLI 參數優先，其次讀 .env，最後用預設值）──────
-    base_llm = LLMConfig()  # 先載入 .env 預設值
+    base_llm = LLMConfig()
+    base_app = AppConfig()
     llm_config = LLMConfig(
         base_url=llm_url or base_llm.base_url,
         model_id=model or base_llm.model_id,
@@ -124,6 +139,8 @@ def analyze(
         anomaly_sigma_threshold=sigma,
         max_anomalies_to_report=max_anomalies,
         mode_override=mode,
+        target_node=node or base_app.target_node,
+        node_label=node_label or base_app.node_label,
     )
 
     # ── 解析時間 ──────────────────────────────
@@ -147,6 +164,8 @@ def analyze(
         Panel(
             f"[bold]Prometheus:[/bold] {prometheus}\n"
             f"[bold]時間範圍:[/bold] {fmt_ts(start_ts)} ~ {fmt_ts(end_ts)}\n"
+            f"[bold]目標節點:[/bold] {config.target_node or '（未指定，分析全部節點）'}"
+            + (f"  label={config.node_label}" if config.target_node else "") + "\n"
             f"[bold]LLM:[/bold] {llm_config.base_url} / {llm_config.model_id}\n"
             f"[bold]模式:[/bold] {'自動偵測' if not mode else mode.upper()}",
             title="[bold]Prometheus 智慧異常分析[/bold]",
@@ -156,10 +175,28 @@ def analyze(
     # ── 連線測試 ──────────────────────────────
     prom = PrometheusClient(prom_config)
     console.print("[cyan]測試 Prometheus 連線...[/cyan]")
-    if not prom.check_connection():
+    diag = prom.diagnose_connection()
+    if not diag["connected"]:
         console.print(f"[red]無法連線至 Prometheus: {prometheus}[/red]")
+        console.print("[yellow]診斷結果：[/yellow]")
+        for name, r in diag["probes"].items():
+            status = f"HTTP {r['status_code']}" if r["status_code"] else f"錯誤: {r['error']}"
+            icon = "✓" if r["ok"] else "✗"
+            console.print(f"  [{icon}] {name:20s}  {r['url']}")
+            console.print(f"       └─ {status}")
+        console.print(
+            "\n[dim]排查建議：\n"
+            "  1. 確認 URL 格式：http://<host>:<port>（不要加路徑）\n"
+            "  2. 用 curl 確認可達：curl <prometheus_url>/-/healthy\n"
+            "  3. 若在 Docker 內執行，host 不能是 localhost，改用主機 IP\n"
+            "  4. 確認防火牆/網路政策允許此容器連至 Prometheus port[/dim]"
+        )
         raise typer.Exit(1)
-    console.print("[green]Prometheus 連線正常[/green]")
+    # 顯示哪個端點成功
+    for name, r in diag["probes"].items():
+        if r["ok"]:
+            console.print(f"[green]Prometheus 連線正常[/green] [dim]（via {name}）[/dim]")
+            break
 
     # ── Capability Probe ──────────────────────
     selected_mode = probe_model_capability(config)

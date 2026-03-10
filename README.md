@@ -247,6 +247,75 @@ cline auth -k "none" --provider openai \
 
 ---
 
+## Prometheus 連線排查
+
+工具啟動時會依序探測以下端點並顯示每個結果：
+
+```
+測試 Prometheus 連線...
+  ✗ /-/healthy          http://prometheus.internal:9090/-/healthy
+       └─ HTTP 404
+  ✓ /api/v1/query       http://prometheus.internal:9090/api/v1/query
+       └─ HTTP 200
+Prometheus 連線正常（via /api/v1/query）
+```
+
+> `/-/healthy` 在部分舊版 Prometheus 或反向代理後方不一定存在，工具會自動 fallback 至 `/api/v1/query`，兩個端點任一成功即視為連線正常。
+
+### 若工具顯示「無法連線」而 curl 可以
+
+**Step 1：確認 URL 格式**
+
+```bash
+# ✓ 正確：只有 host + port，不要加路徑
+--prometheus http://192.168.1.10:9090
+
+# ✗ 錯誤：多了路徑
+--prometheus http://192.168.1.10:9090/prometheus
+```
+
+若 Prometheus 掛在子路徑下（例如 `/prometheus`），在 `PROMETHEUS_URL` 加上路徑即可：
+
+```bash
+PROMETHEUS_URL=http://192.168.1.10:9090/prometheus
+```
+
+**Step 2：用 curl 確認兩個端點都通**
+
+```bash
+PROM=http://prometheus.internal:9090
+
+curl -sv "$PROM/-/healthy"
+curl -sv "$PROM/api/v1/query?query=1"
+```
+
+**Step 3：Docker 容器內的 localhost 問題**
+
+容器內 `localhost` 指的是容器自身，**不是主機**。
+
+```bash
+# ✗ 容器跑起來後打不到主機的 Prometheus
+PROMETHEUS_URL=http://localhost:9090
+
+# ✓ 改用主機 IP 或 Docker host gateway
+PROMETHEUS_URL=http://192.168.1.10:9090          # 主機實際 IP
+PROMETHEUS_URL=http://host.docker.internal:9090  # macOS / Docker Desktop
+```
+
+**Step 4：確認防火牆 / 網路政策**
+
+```bash
+# 在容器內測試是否能到達 Prometheus
+docker run --rm --env-file .env \
+  --entrypoint /bin/sh hwchiu/mohw:prometheus-analyzer-latest \
+  -c "wget -qO- $PROMETHEUS_URL/api/v1/query?query=1"
+
+# 或使用 make run-shell 進入互動 shell 排查
+make run-shell
+```
+
+---
+
 ## Docker 使用
 
 ```bash

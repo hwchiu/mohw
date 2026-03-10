@@ -6,7 +6,7 @@ import json
 import numpy as np
 from datetime import datetime, timezone
 from config import AppConfig
-from prometheus_client import PrometheusClient
+from prometheus_client import PrometheusClient, apply_node_filter
 
 
 def _fmt(ts: float) -> str:
@@ -145,7 +145,10 @@ class ToolExecutor:
         return json.dumps({"count": len(names), "metrics": names[:200]})
 
     def _query_metric(self, metric_name: str, summarize: bool = True) -> str:
-        results = self.prom.query_range(metric_name, self.start, self.end, step=60)
+        query = apply_node_filter(
+            metric_name, self.config.node_label, self.config.target_node or ""
+        )
+        results = self.prom.query_range(query, self.start, self.end, step=60)
         if not results:
             return json.dumps({"metric": metric_name, "result": "no data"})
 

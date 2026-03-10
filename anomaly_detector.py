@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 from rich.console import Console
 from config import AppConfig
-from prometheus_client import PrometheusClient
+from prometheus_client import PrometheusClient, apply_node_filter
 
 console = Console()
 
@@ -59,8 +59,11 @@ def detect_anomalies(
         if not any(m.startswith(p) for p in skip_prefixes)
     ][:max_scan]
 
+    node_info = (
+        f" [節點: {config.target_node}]" if config.target_node else ""
+    )
     console.print(
-        f"[dim]掃描 {len(filtered)} 個 metrics 中的異常...[/dim]"
+        f"[dim]掃描 {len(filtered)} 個 metrics 中的異常{node_info}...[/dim]"
     )
 
     reports: list[AnomalyReport] = []
@@ -69,8 +72,11 @@ def detect_anomalies(
         if progress_callback:
             progress_callback(i, len(filtered), metric_name)
 
+        # 套用節點篩選：只查詢該節點的 metrics
+        query = apply_node_filter(metric_name, config.node_label, config.target_node or "")
+
         try:
-            results = prom.query_range(metric_name, start, end, step)
+            results = prom.query_range(query, start, end, step)
         except Exception:
             continue
 

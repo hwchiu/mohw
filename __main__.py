@@ -84,6 +84,12 @@ def analyze(
              "node_exporter 環境通常是 instance；k8s 環境通常是 node。"
              "預設：instance",
     ),
+    ssl_verify: Optional[str] = typer.Option(
+        None,
+        "--ssl-verify",
+        help="SSL 憑證驗證：true（系統憑證，預設）/ false（跳過）/ /path/to/ca.crt（自訂）。"
+             "優先於 .env 的 PROMETHEUS_SSL_VERIFY。",
+    ),
     llm_url: Optional[str] = typer.Option(
         None,
         "--llm-url",
@@ -123,6 +129,7 @@ def analyze(
     """分析指定時間範圍內特定節點的 Prometheus metrics 異常，找出系統不穩定的根本原因。"""
 
     # ── 建立設定（CLI 參數優先，其次讀 .env，最後用預設值）──────
+    from config import _parse_ssl_verify
     base_llm = LLMConfig()
     base_app = AppConfig()
     llm_config = LLMConfig(
@@ -130,7 +137,19 @@ def analyze(
         model_id=model or base_llm.model_id,
         api_key=api_key or base_llm.api_key,
     )
-    prom_config = PrometheusConfig(base_url=prometheus)
+
+    # 解析 --ssl-verify CLI 參數（覆寫 .env）
+    if ssl_verify is not None:
+        if ssl_verify.lower() == "false":
+            resolved_ssl = False
+        elif ssl_verify.lower() in ("true", "1", "yes"):
+            resolved_ssl = True
+        else:
+            resolved_ssl = ssl_verify  # 路徑
+    else:
+        resolved_ssl = _parse_ssl_verify()  # 讀 .env
+
+    prom_config = PrometheusConfig(base_url=prometheus, ssl_verify=resolved_ssl)
     config = AppConfig(
         llm=llm_config,
         prometheus=prom_config,
@@ -173,6 +192,12 @@ def analyze(
             f"[bold]時間範圍:[/bold] {fmt_ts(start_ts)} ~ {fmt_ts(end_ts)}\n"
             f"[bold]目標節點:[/bold] {config.target_node}  "
             f"[dim](label: {config.node_label})[/dim]\n"
+            f"[bold]SSL:[/bold] "
+            + (
+                "[yellow]跳過驗證[/yellow]" if resolved_ssl is False
+                else f"[green]系統憑證[/green]" if resolved_ssl is True
+                else f"[cyan]{resolved_ssl}[/cyan]"
+            ) + "\n"
             f"[bold]LLM:[/bold] {llm_config.base_url} / {llm_config.model_id}\n"
             f"[bold]模式:[/bold] {'自動偵測' if not mode else mode.upper()}  "
             f"[dim]Workers: {workers}[/dim]",

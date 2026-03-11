@@ -1,6 +1,7 @@
 import re
+import ssl
 import requests
-from typing import Optional
+from typing import Optional, Union
 from config import PrometheusConfig
 
 
@@ -32,6 +33,36 @@ def apply_node_filter(query: str, label: str, value: str) -> str:
     return f"{query}{{{filter_str}}}"
 
 
+def _resolve_ssl_verify(ssl_verify: Union[bool, str]) -> Union[bool, str]:
+    """
+    將 ssl_verify 設定轉換成 requests session 能接受的 verify 值。
+
+    - False         → False（跳過驗證）
+    - str（路徑）   → 使用指定 CA bundle 檔案
+    - True          → 嘗試依序載入：系統 CA bundle → certifi
+    """
+    if ssl_verify is False:
+        return False
+    if isinstance(ssl_verify, str):
+        return ssl_verify  # 自訂 CA bundle 路徑
+
+    # ssl_verify is True：優先使用系統憑證
+    paths = ssl.get_default_verify_paths()
+    if paths.cafile:
+        return paths.cafile
+    if paths.capath:
+        return paths.capath
+
+    # 退回 certifi（requests 內建的 CA bundle）
+    try:
+        import certifi
+        return certifi.where()
+    except ImportError:
+        pass
+
+    return True  # 讓 requests 自行處理
+
+
 class PrometheusClient:
     """封裝 Prometheus HTTP API 查詢"""
 
@@ -39,6 +70,7 @@ class PrometheusClient:
         self.config = config
         self.session = requests.Session()
         self.session.timeout = config.timeout
+        self.session.verify = _resolve_ssl_verify(config.ssl_verify)
 
     def list_metric_names(self) -> list[str]:
         """列出全域所有 metric 名稱（未過濾節點）"""

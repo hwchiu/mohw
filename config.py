@@ -1,9 +1,24 @@
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _parse_ssl_verify() -> Union[bool, str]:
+    """
+    解析 PROMETHEUS_SSL_VERIFY 環境變數：
+      未設定 / "true"  → True（載入系統憑證，預設）
+      "false"          → False（跳過驗證，僅限測試環境）
+      其他字串         → 視為自訂 CA bundle 檔案路徑
+    """
+    val = os.getenv("PROMETHEUS_SSL_VERIFY", "true").strip()
+    if val.lower() == "false":
+        return False
+    if val.lower() in ("true", "1", "yes", ""):
+        return True
+    return val  # 自訂 CA bundle 路徑
 
 
 @dataclass
@@ -25,6 +40,8 @@ class PrometheusConfig:
     base_url: str = field(default_factory=lambda: os.getenv("PROMETHEUS_URL", "http://localhost:9090"))
     timeout: int = 30
     max_metrics_scan: int = 500  # 無節點模式下最多掃描幾個 metrics
+    # SSL 驗證：True = 載入系統憑證、False = 跳過驗證、str = 自訂 CA bundle 路徑
+    ssl_verify: Union[bool, str] = field(default_factory=_parse_ssl_verify)
 
     @property
     def series_endpoint(self) -> str:

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from prometheus_client import PrometheusClient, apply_node_filter
+from prometheus_client import PrometheusClient, apply_node_filter, _resolve_ssl_verify
+from config import PrometheusConfig
 from tests.conftest import (
     prometheus_range_response,
     prometheus_labels_response,
@@ -254,3 +255,79 @@ def test_apply_node_filter_empty_value():
     original = "cpu_usage"
     result = apply_node_filter(original, "instance", "")
     assert result == original
+
+
+# ── _resolve_ssl_verify ───────────────────────────────────────────────────────
+
+def test_resolve_ssl_verify_false():
+    assert _resolve_ssl_verify(False) is False
+
+
+def test_resolve_ssl_verify_custom_path():
+    assert _resolve_ssl_verify("/etc/ssl/custom/ca.crt") == "/etc/ssl/custom/ca.crt"
+
+
+def test_resolve_ssl_verify_true_returns_string_or_true():
+    """True 時應回傳系統 CA 路徑（字串）或 True，不應回傳 False"""
+    result = _resolve_ssl_verify(True)
+    assert result is not False
+    assert result is True or isinstance(result, str)
+
+
+def test_resolve_ssl_verify_true_prefers_system_cafile():
+    """當 ssl.get_default_verify_paths() 有 cafile 時，應優先使用"""
+    mock_paths = MagicMock()
+    mock_paths.cafile = "/etc/ssl/certs/ca-certificates.crt"
+    mock_paths.capath = None
+
+    with patch("ssl.get_default_verify_paths", return_value=mock_paths):
+        result = _resolve_ssl_verify(True)
+
+    assert result == "/etc/ssl/certs/ca-certificates.crt"
+
+
+def test_resolve_ssl_verify_true_falls_back_to_capath():
+    """cafile 不存在時，使用 capath"""
+    mock_paths = MagicMock()
+    mock_paths.cafile = None
+    mock_paths.capath = "/etc/ssl/certs"
+
+    with patch("ssl.get_default_verify_paths", return_value=mock_paths):
+        result = _resolve_ssl_verify(True)
+
+    assert result == "/etc/ssl/certs"
+
+
+def test_resolve_ssl_verify_true_falls_back_to_certifi():
+    """系統憑證不存在時，fallback 到 certifi"""
+    mock_paths = MagicMock()
+    mock_paths.cafile = None
+    mock_paths.capath = None
+
+    with patch("ssl.get_default_verify_paths", return_value=mock_paths), \
+         patch("certifi.where", return_value="/certifi/cacert.pem"):
+        result = _resolve_ssl_verify(True)
+
+    assert result == "/certifi/cacert.pem"
+
+
+# ── session.verify is set on init ─────────────────────────────────────────────
+
+def test_client_session_verify_set_to_false(prom_config):
+    prom_config.ssl_verify = False
+    client = PrometheusClient(prom_config)
+    assert client.session.verify is False
+
+
+def test_client_session_verify_set_to_custom_path(prom_config):
+    prom_config.ssl_verify = "/path/to/ca.crt"
+    client = PrometheusClient(prom_config)
+    assert client.session.verify == "/path/to/ca.crt"
+
+
+def test_client_session_verify_true_not_false(prom_config):
+    """ssl_verify=True 時，session.verify 不應為 False"""
+    prom_config.ssl_verify = True
+    client = PrometheusClient(prom_config)
+    assert client.session.verify is not False
+

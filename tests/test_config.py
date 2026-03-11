@@ -1,5 +1,5 @@
 import os
-from config import AppConfig, LLMConfig, PrometheusConfig
+from config import AppConfig, LLMConfig, PrometheusConfig, _parse_ssl_verify
 
 
 def test_llm_config_reads_from_env(monkeypatch):
@@ -45,3 +45,41 @@ def test_app_config_defaults():
     assert c.anomaly_sigma_threshold == 2.5
     assert c.max_anomalies_to_report == 20
     assert c.mode_override is None
+
+
+# ── _parse_ssl_verify ─────────────────────────────────────────────────────────
+
+def test_parse_ssl_verify_default(monkeypatch):
+    monkeypatch.delenv("PROMETHEUS_SSL_VERIFY", raising=False)
+    assert _parse_ssl_verify() is True
+
+
+def test_parse_ssl_verify_true_string(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_SSL_VERIFY", "true")
+    assert _parse_ssl_verify() is True
+
+
+def test_parse_ssl_verify_false_string(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_SSL_VERIFY", "false")
+    assert _parse_ssl_verify() is False
+
+
+def test_parse_ssl_verify_custom_path(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_SSL_VERIFY", "/etc/ssl/certs/ca.crt")
+    result = _parse_ssl_verify()
+    assert result == "/etc/ssl/certs/ca.crt"
+
+
+def test_prometheus_config_ssl_verify_default():
+    c = PrometheusConfig(base_url="https://prom.internal:9090")
+    assert c.ssl_verify is True
+
+
+def test_prometheus_config_ssl_verify_false():
+    c = PrometheusConfig(base_url="https://prom.internal:9090", ssl_verify=False)
+    assert c.ssl_verify is False
+
+
+def test_prometheus_config_ssl_verify_custom_path():
+    c = PrometheusConfig(base_url="https://prom.internal:9090", ssl_verify="/path/to/ca.crt")
+    assert c.ssl_verify == "/path/to/ca.crt"
